@@ -70,6 +70,11 @@ var TimeLimit = cli.Command{
 			Value: "GET",
 			Usage: "指定使用method",
 		},
+		&cli.StringFlag{
+			Name:  "c",
+			Value: "10",
+			Usage: "concurrency Number of multiple requests to make at a time",
+		},
 	},
 	Action: timeLimit,
 }
@@ -83,7 +88,7 @@ func timeLimit(c *cli.Context) {
 	m := string("m")
 	T := c.String("T")
 	p := c.String("p")
-	//num := 1
+	concurrency := c.Int("c")
 	var bodyReader io.ReadCloser
 	if p != "" {
 		if body, err := ioutil.ReadFile(p); err != nil {
@@ -96,69 +101,73 @@ func timeLimit(c *cli.Context) {
 
 	}
 
-	//wg := sync.WaitGroup{}
 	once := sync.Once{}
 	ta := time.After(time.Duration(int64(ts)) * time.Second)
 	for {
 		select {
 		case <-ta:
-			goto wait
+			goto end
 		default:
-			//wg.Add(1)
-			//go func() {
-			//	defer func() {
-			//		if r := recover(); r != nil {
-			//			log.Println("timeLimit recover:", r)
-			//		}
-			//	}()
+			wg := sync.WaitGroup{}
 
-			client := http.DefaultClient
+			wg.Add(concurrency)
+			for i := 0; i < concurrency; i++ {
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Println("timeLimit recover:", r)
+						}
+					}()
 
-			req := &http.Request{}
-			req.Method = m
+					client := http.DefaultClient
 
-			if u, err := url.Parse(ur); err != nil {
-				log.Fatal("url.Parse error:", err.Error())
-			} else {
-				req.URL = u
+					req := &http.Request{}
+					req.Method = m
+
+					if u, err := url.Parse(ur); err != nil {
+						log.Fatal("url.Parse error:", err.Error())
+					} else {
+						req.URL = u
+					}
+
+					req.Header = make(map[string][]string)
+					req.Header.Set("Content-Type", "text/plain")
+					if T != "" {
+						req.Header.Set("Content-Type", T)
+					}
+					if p != "" {
+						req.Body = bodyReader
+					}
+
+					tm := time.Now()
+					resp, err := client.Do(req)
+
+					since := int64(time.Since(tm))
+					once.Do(func() { //对 min 进行一次初始化
+						atomic.SwapInt64(&txMin, since)
+					})
+					if txMax < since {
+						atomic.SwapInt64(&txMax, since)
+					} else if txMin > since {
+						atomic.SwapInt64(&txMin, since)
+					}
+
+					atomic.AddInt64(&txAvg, since)
+					atomic.AddInt64(&txTotal, 1)
+					if err != nil {
+						atomic.AddInt64(&txETotal, 1)
+					} else {
+						if resp.StatusCode == 200 {
+							atomic.AddInt64(&txSTotal, 1)
+						}
+					}
+					wg.Done()
+				}()
 			}
-
-			req.Header = make(map[string][]string)
-			req.Header.Set("Content-Type", "text/plain")
-			if T != "" {
-				req.Header.Set("Content-Type", T)
-			}
-			if p != "" {
-				req.Body = bodyReader
-			}
-
-			tm := time.Now()
-			resp, err := client.Do(req)
-
-			since := int64(time.Since(tm))
-			once.Do(func() { //对 min 进行一次初始化
-				atomic.SwapInt64(&txMin, since)
-			})
-			if txMax < since {
-				atomic.SwapInt64(&txMax, since)
-			} else if txMin > since {
-				atomic.SwapInt64(&txMin, since)
-			}
-
-			atomic.AddInt64(&txAvg, since)
-			atomic.AddInt64(&txTotal, 1)
-			if err != nil {
-				atomic.AddInt64(&txETotal, 1)
-			} else {
-				if resp.StatusCode == 200 {
-					atomic.AddInt64(&txSTotal, 1)
-				}
-			}
-			//wg.Done()
-			//}()
+			wg.Wait()
 		}
 	}
-wait:
+end:
 	log.Println("since:", time.Since(tm))
 	log.Println("go count :", runtime.NumGoroutine())
 	log.Println(fmt.Sprintf("txTotal:\t%d\tSuccess:\t%d\tError:\t%d\ttx/s:%.2f", txTotal, txSTotal, txETotal, float64(txSTotal)/float64(ts)))
