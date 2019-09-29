@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,12 +19,23 @@ var (
 	txMax = int64(0) //最大相应时长
 	txMin = int64(0) //最小相应时长
 
-	txTotal  = int64(0) //总请求
-	txSTotal = int64(0) //成功请求
-	txETotal = int64(0) //错误请求
+	txTotal   = int64(0) //总请求
+	txSTotal  = int64(0) //成功请求
+	txETotal  = int64(0) //错误请求
+	reqsPool  = sync.Pool{}
+	reqCilent = sync.Pool{}
 )
 
 func main() {
+
+	reqsPool.New = func() interface{} {
+		return &http.Request{}
+	}
+
+	reqCilent.New = func() interface{} {
+		return &http.Client{}
+	}
+
 	app := &cli.App{
 		Name: "glr",
 
@@ -101,6 +111,10 @@ func timeLimit(c *cli.Context) {
 
 	}
 
+	u, err := url.Parse(ur)
+	if err != nil {
+		log.Fatal("url.Parse error:", err.Error())
+	}
 	once := sync.Once{}
 	ta := time.After(time.Duration(int64(ts)) * time.Second)
 	for {
@@ -119,16 +133,10 @@ func timeLimit(c *cli.Context) {
 						}
 					}()
 
-					client := http.DefaultClient
-
-					req := &http.Request{}
+					client := &http.Client{}
+					req := reqsPool.Get().(*http.Request)
 					req.Method = m
-
-					if u, err := url.Parse(ur); err != nil {
-						log.Fatal("url.Parse error:", err.Error())
-					} else {
-						req.URL = u
-					}
+					req.URL = u
 
 					req.Header = make(map[string][]string)
 					req.Header.Set("Content-Type", "text/plain")
@@ -169,8 +177,6 @@ func timeLimit(c *cli.Context) {
 	}
 end:
 	log.Println("since:", time.Since(tm))
-	log.Println("go count :", runtime.NumGoroutine())
-	log.Println(fmt.Sprintf("txTotal:\t%d\tSuccess:\t%d\tError:\t%d\ttx/s:%.2f", txTotal, txSTotal, txETotal, float64(txSTotal)/float64(ts)))
-	log.Println(fmt.Sprintf("avg:\t%s\ttMax\t%s\ttMin\t%s", time.Duration(txAvg/txTotal).String(), time.Duration(txMax).String(), time.Duration(txMin).String()))
-
+	fmt.Println(fmt.Sprintf("txTotal:\t%d\tSuccess:\t%d\tError:\t%d\ttx/s:%.2f", txTotal, txSTotal, txETotal, float64(txSTotal)/float64(ts)))
+	fmt.Println(fmt.Sprintf("avg:\t%s\ttMax\t%s\ttMin\t%s", time.Duration(txAvg/txTotal).String(), time.Duration(txMax).String(), time.Duration(txMin).String()))
 }
