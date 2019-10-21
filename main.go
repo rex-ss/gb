@@ -31,9 +31,9 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 
 	app := &cli.App{
-		Name: "glr",
+		Name: "gb",
 
-		UsageText: "Usage: glr [options] [http[s]://]hostname[:port]/path...",
+		UsageText: "Usage: gb [options] [http[s]://]hostname[:port]/path...",
 		Authors:   []cli.Author{{Name: "Rex", Email: "rex@163.com"}},
 		Version:   "0.0.1",
 		Commands: []cli.Command{
@@ -158,7 +158,6 @@ func timeLimit(c *cli.Context) {
 						atomic.AddInt64(&txSTotal, 1)
 					}
 				} else {
-					fmt.Println("err:", err.Error())
 					atomic.AddInt64(&txETotal, 1)
 				}
 			}
