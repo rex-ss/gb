@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/panjf2000/ants/v2"
 	"github.com/urfave/cli"
 	"io"
 	"io/ioutil"
@@ -129,8 +128,6 @@ func timeLimit(c *cli.Context) {
 	client.Do(req1)
 	since := int64(time.Since(tm))
 	atomic.SwapInt64(&txMin, since)
-	pool, _ := ants.NewPool(10000)
-	defer pool.Release()
 	for i := 0; i < concurrency; i++ {
 		go func() {
 			req := &http.Request{}
